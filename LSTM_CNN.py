@@ -124,7 +124,8 @@ def preprocess(array):
     return array
     
 class LSTM_CNN:
-    def __init__(self, annots, df, baseCase = True):
+    def __init__(self, annots, df, baseCase = True, timeStamps = 20):
+        self.timeStamps = timeStamps
         if baseCase:
             self.annots = createTargets(annots)
             self.annots.extend([1]*10)
@@ -137,29 +138,31 @@ class LSTM_CNN:
         newCols = changeColOrder(self.df, loc)
         self.df = self.df[newCols]
         
-    def dataPrep(self, dfE = None):#Shape data into image format
+    def dataPrep(self, dfE = None, downSample = 1, binary = False, random_state = 1):#Shape data into image format
         features =  np.array(self.df)
         x = []
         y = []
 
         if isinstance(dfE, pd.DataFrame):
+            if binary:
+                features =  np.array(dfE)
             indexes = dfE[dfE.sum(axis=1) != 0].index
-            indexes = indexes[indexes < len(self.df)-20] -1
-            for i in range(len(features)-22):
+            indexes = indexes[indexes < len(self.df)-self.timeStamps] -1
+            for i in range(len(features)-self.timeStamps-2):
                 if i in indexes:
-                    x.append(features[i:i+20])
-                    y.append(self.annots[i+21])
+                    x.append(features[i:i+self.timeStamps:downSample])
+                    y.append(self.annots[i+self.timeStamps-1])
         else:
-            for i in range(len(features)-22):
-                x.append(features[i:i+20])
-                y.append(self.annots[i+21])
+            for i in range(len(features)-self.timeStamps-2):
+                x.append(features[i:i+self.timeStamps:downSample])
+                y.append(self.annots[i+self.timeStamps-1])
         x = np.array(x)
         y = np.array(y)
 
-        x= preprocess(x)
+        x = preprocess(x)
         
         from sklearn.model_selection import train_test_split   
-        self.X_train, X_test, y_train, y_test = train_test_split(x, y, test_size = 0.2, random_state = 1)
+        self.X_train, X_test, y_train, y_test = train_test_split(x, y, test_size = 0.5, random_state = random_state)
         return self.X_train, X_test, y_train, y_test
         
     def build(self):
@@ -171,7 +174,7 @@ class LSTM_CNN:
         inputs = Input(shape=(self.X_train.shape[1],self.X_train.shape[2], self.X_train.shape[3], self.X_train.shape[4]))
         #lstm = lambda x, channels: layers.LSTM(channels)(x)
         cnn_feat = layers.TimeDistributed( layers.Conv2D(filters = 64, kernel_size = 3, activation = 'relu'))(inputs)
-        cnn_feat = layers.TimeDistributed( layers.Conv2D(filters = 64, kernel_size = 3, activation = 'relu'))(cnn_feat)
+        cnn_feat = layers.TimeDistributed( layers.Conv2D(filters = 128, kernel_size = 3, strides = 2, activation = 'relu'))(cnn_feat)
         cnn_feat = layers.TimeDistributed( layers.Dropout(0.5))(cnn_feat)
         cnn_feat = layers.TimeDistributed( layers.MaxPooling2D(2))(cnn_feat)
         cnn_feat = layers.TimeDistributed( layers.Flatten())(cnn_feat)
@@ -185,4 +188,36 @@ class LSTM_CNN:
             loss="binary_crossentropy", 
             metrics=['accuracy'])
         return model
+        
+        
+    def cellAccurate(self, models, X_test, dfE, delay = 0, downSample = 1):
+        #predict
+        activitySize = {}
+        sizeCount = {}
+        for i, model in enumerate(models):
+            X_train, X_test, y_train, y_test = self.dataPrep(dfE, downSample = 1, random_state = i)
+            y_pred = model.predict(X_test)
+            X_train, X_test, y_train, y_test = self.dataPrep(dfE, downSample = downSample, binary = True, random_state = i)
+            for i, data_pt in enumerate(X_test):
+                if i + delay >= len(X_test) or i + delay < 0:
+                    continue
+                cellsActive = round(data_pt.sum()/data_pt.shape[0])
+                if cellsActive not in activitySize:
+                    activitySize[cellsActive] = 0
+                    sizeCount[cellsActive] = 0
+                if len(y_test) == 1:
+                    activitySize[cellsActive] += round(y_pred[i + delay][0]) == y_test[i + delay][0]
+                else:
+                    activitySize[cellsActive] += np.array_equal(y_pred[i + delay] == y_pred[i + delay].max(), y_test[i + delay])
+                sizeCount[cellsActive] +=1
+
+        #plot
+        plot_data = []
+        for key in sorted(activitySize.keys()):
+            if sizeCount[key] > 200:
+                plot_data.append(activitySize[key]/sizeCount[key]*100)
+            
+        import matplotlib.pyplot as plt
+        plt.plot(sorted(activitySize.keys())[:len(plot_data)], plot_data)
+        print(sizeCount)         
 

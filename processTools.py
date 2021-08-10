@@ -133,6 +133,36 @@ def simplePrint(path, toAccept, events):
                                   colormap=plt.cm.viridis)
     plt.figure()
 
+#to do
+def heatMap(path, toAccept, events, clusters, df):
+    
+    fig, ax = plt.subplots(1, len(clusters) + 1)
+    for i, cluster in enumerate(clusters):
+        #Get event data for accepted cells
+        eventPdf = pd.read_csv(events[1], skipinitialspace = True)
+
+        #narrow down accepted cells based on event data
+        eventPdf = eventPdf.loc[(eventPdf['Name'].isin(toAccept))]
+        toAccept = eventPdf["Name"].tolist()
+
+        #narrow down accepted cells again based on more event data
+        eventdf = pd.read_csv(events[0], skipinitialspace = True)
+        totals = eventdf.groupby(['Cell Name'])
+        eventdf = eventdf.loc[(eventdf['Cell Name'].isin(toAccept))]
+        toAccept = list(set(eventdf["Cell Name"].tolist()))
+
+        #load cell size and location
+        dfP = pd.read_csv(path[1], skipinitialspace = True)    
+        jdf = pd.merge(dfP, eventPdf, on="Name")
+        jdf = jdf.loc[(jdf['Name'].isin(toAccept))]
+        jdf['EventRate(Hz)'] = (df.iloc[cluster].sum(axis=0)/df.sum(axis = 0)).to_numpy()
+        circle_size = jdf['SNR'] * jdf['Size'] / 2
+        ax[i] = jdf.plot.scatter(x='CentroidX',
+                                      y='CentroidY',
+                                      c='EventRate(Hz)', s=circle_size,
+                                      colormap=plt.cm.viridis)
+    plt.figure()
+    
 def AdvancedPrint(path, patterns, events, df):
     
     #Get event data for accepted cells
