@@ -138,7 +138,7 @@ class LSTM_CNN:
         newCols = changeColOrder(self.df, loc)
         self.df = self.df[newCols]
         
-    def dataPrep(self, dfE = None, downSample = 1, binary = False, random_state = 1):#Shape data into image format
+    def dataPrep(self, dfE = None, downSample = 1, binary = False, random_state = 1, limit = False):#Shape data into image format
         features =  np.array(self.df)
         x = []
         y = []
@@ -162,7 +162,9 @@ class LSTM_CNN:
         x = preprocess(x)
         
         from sklearn.model_selection import train_test_split   
-        self.X_train, X_test, y_train, y_test = train_test_split(x, y, test_size = 0.5, random_state = random_state)
+        self.X_train, X_test, y_train, y_test = train_test_split(x, y, test_size = 0.1, shuffle = True, random_state = random_state)
+        if limit:
+            return self.X_train[int(self.X_train.shape[1]/10)], X_test[int(X_test.shape[1]/10)], y_train[int(y_train.shape[1]/10)], y_test[int(y_test.shape[1]/10)]
         return self.X_train, X_test, y_train, y_test
         
     def build(self):
